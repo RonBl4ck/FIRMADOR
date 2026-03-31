@@ -1,0 +1,9 @@
+﻿python : C:\Users\P723919021\Documents\FIRMADOR\tests\test_flet_ui.py:316: DeprecationWarning: ElevatedButton is 
+deprecated since version 0.80.0 and will be removed in version 1.0. Use Button instead.
+En línea: 1 Carácter: 1
++ python tests/test_flet_ui.py 2> tests/error_log.txt
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (C:\Users\P72391...Button instead.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  action_btn = ft.ElevatedButton(
