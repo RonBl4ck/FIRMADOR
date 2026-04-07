@@ -1,6 +1,5 @@
 import os
 import sqlite3
-import datetime
 from pathlib import Path
 
 # Configuración de base de datos
@@ -67,6 +66,19 @@ def init_db():
             valor TEXT
         )
     ''')
+
+    _ensure_column(c, "documentos", "firma_pagina", "INTEGER")
+    _ensure_column(c, "documentos", "firma_x", "REAL")
+    _ensure_column(c, "documentos", "firma_y", "REAL")
+    _ensure_column(c, "documentos", "firma_w", "REAL")
+    _ensure_column(c, "documentos", "firma_h", "REAL")
     
     conn.commit()
     conn.close()
+
+
+def _ensure_column(cursor, table_name, column_name, column_type):
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    columns = {row[1] for row in cursor.fetchall()}
+    if column_name not in columns:
+        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
