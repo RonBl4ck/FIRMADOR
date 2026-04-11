@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+
+# Archivos de la aplicación local
+/assets/credentials/
+/C:/Gestion_Firmas/
+*.sqlite
+
+# Credenciales de Nube y Streamlit
+.streamlit/secrets.toml
+*.json
+*.pfx
+*.pem
+*.key
+token.json
+credentials.json
+firmador-*.json
+
+# Entorno virtual
+venv/
+.env
+
+# MacOS / Windows
+.DS_Store
+Thumbs.db

@@ -157,6 +157,24 @@ def reject_document(doc_id: int, actor: str, reason: str) -> None:
     refresh_registry_snapshot()
 
 
+def save_signature_file(content: bytes, filename: str) -> str:
+    path = Path("assets/credentials")
+    path.mkdir(parents=True, exist_ok=True)
+    target = path / filename
+    target.write_bytes(content)
+    ConfigService.set("firma_path", str(target.absolute()))
+    return str(target.absolute())
+
+
+def save_pfx_file(content: bytes, filename: str) -> str:
+    path = Path("assets/credentials")
+    path.mkdir(parents=True, exist_ok=True)
+    target = path / filename
+    target.write_bytes(content)
+    ConfigService.set("pfx_path", str(target.absolute()))
+    return str(target.absolute())
+
+
 def update_settings(settings: Dict[str, str]) -> None:
     for key, value in settings.items():
         ConfigService.set(key, value)

@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 import streamlit as st
 from PIL import Image, ImageDraw
 from PyPDF2 import PdfReader
+from streamlit_image_coordinates import streamlit_image_coordinates
 
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -152,6 +153,18 @@ def _render_signature_selector(uploaded) -> Optional[Dict[str, float]]:
         st.warning("No se pudo leer el PDF para definir la firma.")
         return None
 
+    firma_path = get_settings().get("firma_path", "C:/Gestion_Firmas/firma.png")
+    
+    # Calcular aspecto de la firma para mantener proporciones
+    aspect_ratio = 2.0  # por defecto ancho el doble que alto
+    try:
+        if os.path.exists(firma_path):
+            with Image.open(firma_path) as f_img:
+                if f_img.height > 0:
+                    aspect_ratio = f_img.width / f_img.height
+    except Exception:
+        pass
+
     st.markdown("### Zona de firma")
     page_options = [f"Pagina {page['index'] + 1}" for page in metadata["pages"]]
     default_page = len(page_options) - 1
@@ -160,60 +173,73 @@ def _render_signature_selector(uploaded) -> Optional[Dict[str, float]]:
     page_data = metadata["pages"][page_index]
 
     default_width = min(180.0, page_data["width"] * 0.3)
-    default_height = min(90.0, page_data["height"] * 0.12)
+    default_height = default_width / aspect_ratio
     default_x = max(20.0, page_data["width"] - default_width - 40.0)
     default_y_top = max(20.0, page_data["height"] - default_height - 80.0)
 
-    c1, c2 = st.columns(2)
+    # El tamaño en pantalla
+    preview_base = _render_pdf_page(pdf_bytes, page_index)
+    
+    st.info("💡 Haz clic en la imagen donde deseas que vaya el **centro** de la firma.")
+    
+    c1, c2 = st.columns([1, 2])
     with c1:
         width = st.number_input(
-            "Ancho firma",
+            "Ancho de firma",
             min_value=60.0,
             max_value=float(page_data["width"]),
             value=float(round(default_width, 1)),
             step=5.0,
             key=f"sig_w_{uploaded.name}_{page_index}",
         )
-        x_from_left = st.number_input(
-            "Posicion X",
-            min_value=0.0,
-            max_value=max(0.0, float(page_data["width"] - width)),
-            value=float(round(min(default_x, page_data["width"] - width), 1)),
-            step=5.0,
-            key=f"sig_x_{uploaded.name}_{page_index}",
-        )
-    with c2:
         height = st.number_input(
-            "Alto firma",
-            min_value=30.0,
-            max_value=float(page_data["height"]),
-            value=float(round(default_height, 1)),
-            step=5.0,
+            "Alto calculado",
+            value=float(round(width / aspect_ratio, 1)),
+            disabled=True,
             key=f"sig_h_{uploaded.name}_{page_index}",
         )
-        y_from_top = st.number_input(
-            "Posicion Y",
-            min_value=0.0,
-            max_value=max(0.0, float(page_data["height"] - height)),
-            value=float(round(min(default_y_top, page_data["height"] - height), 1)),
-            step=5.0,
-            key=f"sig_y_{uploaded.name}_{page_index}",
-        )
+        
+    x_from_left = st.session_state.get(f"sig_x_state_{uploaded.name}", default_x)
+    y_from_top = st.session_state.get(f"sig_y_state_{uploaded.name}", default_y_top)
 
-    preview_image = _build_preview_image(
-        pdf_bytes=pdf_bytes,
-        page_index=page_index,
-        page_width=page_data["width"],
-        page_height=page_data["height"],
-        x=x_from_left,
-        y_from_top=y_from_top,
-        width=width,
-        height=height,
-    )
-    if preview_image:
-        st.image(preview_image, caption="Previsualizacion de la firma. Ajusta X/Y hasta verla bien.", use_container_width=True)
-    else:
-        st.info("No se pudo renderizar el PDF como imagen en este entorno. Puedes seguir ajustando la zona con X/Y.")
+    with c2:
+        if preview_base:
+            # Dibujar un recuadro temporal solo para ubicar visualmente
+            preview_draw = preview_base.copy()
+            draw = ImageDraw.Draw(preview_draw, "RGBA")
+            scale_x = preview_draw.width / float(page_data["width"])
+            scale_y = preview_draw.height / float(page_data["height"])
+            
+            box_w = width * scale_x
+            box_h = height * scale_y
+            box_x = x_from_left * scale_x
+            box_y = y_from_top * scale_y
+            
+            # Dibujar caja
+            draw.rectangle((box_x, box_y, box_x + box_w, box_y + box_h), outline=(220, 30, 30, 255), width=2, fill=(220, 30, 30, 70))
+            
+            # Escuchar clic
+            value = streamlit_image_coordinates(preview_draw, key=f"img_coords_{uploaded.name}_{page_index}")
+            
+            if value is not None:
+                clicked_x = value["x"] / scale_x
+                clicked_y = value["y"] / scale_y
+                
+                # Ajustar para que el clic sea el CENTRO de la firma
+                new_x = clicked_x - (width / 2.0)
+                new_y = clicked_y - (height / 2.0)
+                
+                # Evitar salir de limites
+                new_x = max(0.0, min(new_x, float(page_data["width"]) - width))
+                new_y = max(0.0, min(new_y, float(page_data["height"]) - height))
+                
+                # Guardar en estado y re-renderizar
+                if new_x != x_from_left or new_y != y_from_top:
+                    st.session_state[f"sig_x_state_{uploaded.name}"] = new_x
+                    st.session_state[f"sig_y_state_{uploaded.name}"] = new_y
+                    st.rerun()
+        else:
+            st.warning("No se puede visualizar el PDF. Usa X, Y manual.")
 
     pdf_y = float(page_data["height"] - y_from_top - height)
     return {
@@ -254,6 +280,11 @@ def _render_firmante_panel(profile: str) -> None:
                     f"x={round(float(selected_doc['firma_x'] or 0), 1)}, "
                     f"y={round(float(selected_doc['firma_y'] or 0), 1)}"
                 )
+
+            st.divider()
+            st.markdown("#### Revisar Documento")
+            _render_download_section([selected_doc], title="Previsualizar / Descargar Pendiente")
+            st.divider()
 
             c1, c2 = st.columns(2)
             with c1:
@@ -305,7 +336,7 @@ def _render_settings() -> None:
     settings = get_settings()
     with st.form("settings_form"):
         st.markdown("### Almacenamiento")
-        storage_mode = st.selectbox("Modo storage", ["local", "onedrive_api"], index=["local", "onedrive_api"].index(settings.get("storage_mode", "local") or "local"))
+        storage_mode = st.selectbox("Modo storage", ["local", "onedrive_api", "google_drive"], index=["local", "onedrive_api", "google_drive"].index(settings.get("storage_mode", "google_drive") or "google_drive"))
         local_base_dir = st.text_input("Base local", value=settings.get("storage_local_base_dir", ""))
         local_inbox_dir = st.text_input("Carpeta entrada", value=settings.get("storage_local_inbox_dir", ""))
         local_signed_dir = st.text_input("Carpeta firmados", value=settings.get("storage_local_signed_dir", ""))
@@ -317,8 +348,10 @@ def _render_settings() -> None:
         registry_csv_path = st.text_input("Ruta CSV", value=settings.get("registry_csv_path", ""))
 
         st.markdown("### Firma")
-        firma_path = st.text_input("Imagen firma", value=settings.get("firma_path", ""))
-        pfx_path = st.text_input("Certificado PFX", value=settings.get("pfx_path", ""))
+        st.markdown("### Configuración de Firma (Servidor)")
+        st.caption("Los archivos deben colocarse manualmente en el servidor. Aquí defines la ruta interna absoluta.")
+        firma_path = st.text_input("Imagen firma (.png)", value=settings.get("firma_path", "assets/credentials/firma.png"))
+        pfx_path = st.text_input("Certificado (.pfx)", value=settings.get("pfx_path", "assets/credentials/certificado.pfx"))
         pfx_pass = st.text_input("Password PFX", value=settings.get("pfx_pass", ""), type="password")
 
         st.markdown("### OneDrive API")
@@ -425,33 +458,6 @@ def _get_pdf_metadata(pdf_bytes: bytes) -> Dict:
             }
         )
     return {"pages": pages}
-
-
-def _build_preview_image(
-    *,
-    pdf_bytes: bytes,
-    page_index: int,
-    page_width: float,
-    page_height: float,
-    x: float,
-    y_from_top: float,
-    width: float,
-    height: float,
-) -> Optional[Image.Image]:
-    image = _render_pdf_page(pdf_bytes, page_index)
-    if image is None:
-        return None
-
-    preview = image.copy()
-    draw = ImageDraw.Draw(preview, "RGBA")
-    scale_x = preview.width / float(page_width)
-    scale_y = preview.height / float(page_height)
-    left = x * scale_x
-    top = y_from_top * scale_y
-    right = left + width * scale_x
-    bottom = top + height * scale_y
-    draw.rectangle((left, top, right, bottom), outline=(220, 30, 30, 255), width=4, fill=(220, 30, 30, 70))
-    return preview
 
 
 def _render_pdf_page(pdf_bytes: bytes, page_index: int) -> Optional[Image.Image]:
